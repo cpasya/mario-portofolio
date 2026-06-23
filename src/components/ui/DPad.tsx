@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useGameStore, type ControlKey } from "@/store/useGameStore";
 
@@ -15,6 +15,35 @@ export default function DPad() {
   // udah geser keluar dari area tombol sebelum dilepas. Juga support multi-touch
   // (mis. tahan "kanan" sambil "lompat").
   const activePointers = useRef<Map<number, ControlKey>>(new Map());
+
+  // Jarak (px) dari bawah layout-viewport ke bawah area yang BENERAN KELIATAN.
+  // Di HP layar gede, toolbar/gesture-bar browser "makan" bagian bawah, dan
+  // env(safe-area-inset-bottom) sering dilaporin 0 (terutama Chrome Android)
+  // -> D-Pad jadi ketutup/terpotong. Kita ukur sendiri pakai visualViewport.
+  const [bottomInset, setBottomInset] = useState(0);
+
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const update = () => {
+      // innerHeight = tinggi layout viewport (tetap).
+      // vv.height + vv.offsetTop = batas bawah area yang keliatan.
+      // Selisihnya = tinggi toolbar/gesture-bar yang nutupin bawah.
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setBottomInset(inset);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
 
   // === SAFETY NET GLOBAL (kunci anti-nyangkut / "ke-teken terus") ===
   // Dengernya di window, bukan di tombol. Jadi apapun yang terjadi (jari lepas
@@ -90,14 +119,18 @@ export default function DPad() {
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between"
-      // Safe-area: hindarin D-Pad ketutup notch / home-indicator / toolbar HP
-      // (bikin masalah "terpotong"). Butuh viewportFit:"cover" di layout.tsx.
+      // FIXED (bukan absolute) -> lolos dari overflow-hidden parent & selalu
+      // ngikut viewport. Posisi bawahnya = di atas toolbar (bottomInset) yang
+      // diukur via visualViewport, jadi GAK ketutup di layar gede.
+      className="pointer-events-none fixed inset-x-0 z-20 flex items-end justify-between"
       style={{
+        // Naikin D-Pad ke atas toolbar/gesture-bar (hasil ukur JS).
+        bottom: `${bottomInset}px`,
+        // Jarak nyaman dari tepi + safe-area (notch/home-indicator iOS).
         paddingTop: "1.5rem",
-        paddingLeft: "max(1.5rem, env(safe-area-inset-left))",
-        paddingRight: "max(1.5rem, env(safe-area-inset-right))",
-        paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+        paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+        paddingLeft: "max(1rem, env(safe-area-inset-left))",
+        paddingRight: "max(1rem, env(safe-area-inset-right))",
       }}
     >
       <div className="pointer-events-auto flex gap-3">
