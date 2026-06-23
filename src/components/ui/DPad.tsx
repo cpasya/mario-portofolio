@@ -174,7 +174,7 @@ export default function DPad() {
           onPointerDown={press("jump")}
           onContextMenu={noContext}
         >
-          ⤴
+          ▲
         </button>
       </div>
     </div>
