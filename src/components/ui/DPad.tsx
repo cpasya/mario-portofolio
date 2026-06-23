@@ -4,31 +4,138 @@ import { useEffect, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useGameStore, type ControlKey } from "@/store/useGameStore";
 
+const BTN_BG = "rgba(255, 255, 255, 0.30)";
+const BTN_BG_ACTIVE = "rgba(255, 255, 255, 0.60)";
+
+// Tahan minimum (ms): kalau jari nempel sebentar BANGET, key tetap "nyala"
+// minimal segini biar frame loop (Player) sempat baca walau FPS rendah di HP
+// Android mid-bawah. Tanpa ini, tap super cepat bisa lewat di antara 2 frame.
+const MIN_HOLD_MS = 140;
+
+/**
+ * Satu tombol D-Pad. KUNCI buat HP Android (mid ke bawah) yang delay:
+ * input ditangani lewat NATIVE "touchstart" listener (passive:false), BUKAN
+ * React onPointerDown. Di Android Chrome, pointer/synthetic event itu lebih
+ * lambat (lewat event-delegation + lapisan pointer); native touchstart adalah
+ * sinyal sentuh paling awal -> latensi minimal + bisa preventDefault buat
+ * matiin delay 300ms, scroll-hijack, zoom, dan double-tap.
+ */
+function PadButton({
+  control,
+  label,
+  ariaLabel,
+}: {
+  control: ControlKey;
+  label: string;
+  ariaLabel: string;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    let pressedAt = 0;
+    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const setBg = (active: boolean) => {
+      el.style.backgroundColor = active ? BTN_BG_ACTIVE : BTN_BG;
+    };
+
+    const press = () => {
+      if (releaseTimer !== null) {
+        clearTimeout(releaseTimer);
+        releaseTimer = null;
+      }
+      pressedAt = Date.now();
+      const s = useGameStore.getState();
+      s.setControl(control, true);
+      // Tombol bawah: di overworld masuk pipa, di castle buka foto terdekat.
+      if (control === "down") {
+        s.tryEnterPipe();
+        s.tryOpenPhoto();
+      }
+      setBg(true);
+    };
+
+    const release = () => {
+      // Visual balik normal langsung (ngikut jari).
+      setBg(false);
+      const held = Date.now() - pressedAt;
+      const finish = () => {
+        useGameStore.getState().setControl(control, false);
+        releaseTimer = null;
+      };
+      // Jamin key nyala minimal MIN_HOLD_MS -> tap super cepat tetap kebaca
+      // frame loop walau Android lagi lambat. (1 tekan tetap = 1 lompat karena
+      // Player pakai edge-detection.)
+      if (held < MIN_HOLD_MS) {
+        releaseTimer = setTimeout(finish, MIN_HOLD_MS - held);
+      } else {
+        finish();
+      }
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      e.preventDefault(); // butuh passive:false (di bawah) biar ini jalan
+      press();
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      release();
+    };
+
+    // passive:false WAJIB di Android Chrome supaya preventDefault efektif.
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: false });
+    // Fallback mouse (DevTools / perangkat hybrid). preventDefault di touch
+    // udah nyegah mouse-event sintetis, jadi gak dobel.
+    el.addEventListener("mousedown", press);
+    window.addEventListener("mouseup", release);
+
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+      el.removeEventListener("mousedown", press);
+      window.removeEventListener("mouseup", release);
+      if (releaseTimer !== null) clearTimeout(releaseTimer);
+      // Pastikan key gak ketinggalan nyala saat unmount (mis. ganti scene).
+      useGameStore.getState().setControl(control, false);
+    };
+  }, [control]);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-label={ariaLabel}
+      onContextMenu={(e) => e.preventDefault()}
+      className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full text-2xl text-white backdrop-blur"
+      style={{
+        backgroundColor: BTN_BG,
+        touchAction: "none",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        WebkitTouchCallout: "none",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function DPad() {
   const isMobile = useIsMobile();
-  const setControl = useGameStore((s) => s.setControl);
-  const tryEnterPipe = useGameStore((s) => s.tryEnterPipe);
-  const tryOpenPhoto = useGameStore((s) => s.tryOpenPhoto);
-
-  // Map pointerId -> tombol yang lagi ditahan jari itu.
-  // Tujuannya: tiap jari dilepas, kita matiin key yang TEPAT — walau jarinya
-  // udah geser keluar dari area tombol sebelum dilepas. Juga support multi-touch
-  // (mis. tahan "kanan" sambil "lompat").
-  const activePointers = useRef<Map<number, ControlKey>>(new Map());
-
-  // Jarak (px) dari bawah layout-viewport ke bawah area yang BENERAN KELIATAN.
-  // Di HP layar gede, toolbar/gesture-bar browser "makan" bagian bawah, dan
-  // env(safe-area-inset-bottom) sering dilaporin 0 (terutama Chrome Android)
-  // -> D-Pad jadi ketutup/terpotong. Kita ukur sendiri pakai visualViewport.
   const [bottomInset, setBottomInset] = useState(0);
 
+  // Posisikan D-Pad di atas toolbar/gesture-bar HP (anti kepotong di layar gede).
   useEffect(() => {
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     if (!vv) return;
     const update = () => {
-      // innerHeight = tinggi layout viewport (tetap).
-      // vv.height + vv.offsetTop = batas bawah area yang keliatan.
-      // Selisihnya = tinggi toolbar/gesture-bar yang nutupin bawah.
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       setBottomInset(inset);
     };
@@ -45,88 +152,33 @@ export default function DPad() {
     };
   }, []);
 
-  // === SAFETY NET GLOBAL (kunci anti-nyangkut / "ke-teken terus") ===
-  // Dengernya di window, bukan di tombol. Jadi apapun yang terjadi (jari lepas
-  // di luar tombol, gesture dibatalin browser -> pointercancel, pindah tab,
-  // window blur) -> key yang lagi nyala PASTI dimatiin.
+  // Safety net: matiin semua kontrol pas tab disembunyikan / window blur,
+  // biar gak ada tombol "nyangkut" nyala.
   useEffect(() => {
-    const releaseOne = (e: PointerEvent) => {
-      const key = activePointers.current.get(e.pointerId);
-      if (key) {
-        setControl(key, false);
-        activePointers.current.delete(e.pointerId);
-      }
-    };
-    const releaseAll = () => {
-      activePointers.current.forEach((key) => setControl(key, false));
-      activePointers.current.clear();
+    const clearAll = () => {
+      const { setControl } = useGameStore.getState();
+      (["left", "right", "jump", "down"] as ControlKey[]).forEach((k) =>
+        setControl(k, false),
+      );
     };
     const onVisibility = () => {
-      if (document.hidden) releaseAll();
+      if (document.hidden) clearAll();
     };
-
-    window.addEventListener("pointerup", releaseOne);
-    window.addEventListener("pointercancel", releaseOne);
-    window.addEventListener("blur", releaseAll);
+    window.addEventListener("blur", clearAll);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.removeEventListener("pointerup", releaseOne);
-      window.removeEventListener("pointercancel", releaseOne);
-      window.removeEventListener("blur", releaseAll);
+      window.removeEventListener("blur", clearAll);
       document.removeEventListener("visibilitychange", onVisibility);
-      releaseAll();
     };
-  }, [setControl]);
+  }, []);
 
   if (!isMobile) return null;
 
-  const press = (k: ControlKey) => (e: React.PointerEvent) => {
-    // Cegah browser nganggep sentuhan ini sebagai scroll / zoom / double-tap,
-    // yang bikin tombol "gak responsif".
-    e.preventDefault();
-    // Lepas "implicit pointer capture" bawaan touch, biar pelepasan jari
-    // diurus listener global di window (lebih anti-nyangkut & multi-touch aman).
-    try {
-      (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
-    } catch {
-      /* no-op */
-    }
-    activePointers.current.set(e.pointerId, k);
-    setControl(k, true);
-    if (k === "down") {
-      // Overworld: masuk pipa. Castle: buka frame foto terdekat.
-      tryEnterPipe();
-      tryOpenPhoto();
-    }
-  };
-
-  const btn =
-    "pointer-events-auto flex h-16 w-16 touch-none select-none items-center " +
-    "justify-center rounded-full bg-white/30 text-2xl text-white backdrop-blur " +
-    "active:bg-white/60";
-
-  // touch-action / user-select juga diset inline buat jaga-jaga kalau util
-  // Tailwind ke-purge atau beda versi.
-  const btnStyle: React.CSSProperties = {
-    touchAction: "none",
-    WebkitUserSelect: "none",
-    userSelect: "none",
-    WebkitTouchCallout: "none",
-    WebkitTapHighlightColor: "transparent",
-  };
-
-  const noContext = (e: React.MouseEvent) => e.preventDefault();
-
   return (
     <div
-      // FIXED (bukan absolute) -> lolos dari overflow-hidden parent & selalu
-      // ngikut viewport. Posisi bawahnya = di atas toolbar (bottomInset) yang
-      // diukur via visualViewport, jadi GAK ketutup di layar gede.
       className="pointer-events-none fixed inset-x-0 z-20 flex items-end justify-between"
       style={{
-        // Naikin D-Pad ke atas toolbar/gesture-bar (hasil ukur JS).
         bottom: `${bottomInset}px`,
-        // Jarak nyaman dari tepi + safe-area (notch/home-indicator iOS).
         paddingTop: "1.5rem",
         paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
         paddingLeft: "max(1rem, env(safe-area-inset-left))",
@@ -134,48 +186,16 @@ export default function DPad() {
       }}
     >
       <div className="pointer-events-auto flex gap-3">
-        <button
-          type="button"
-          className={btn}
-          style={btnStyle}
-          aria-label="Kiri"
-          onPointerDown={press("left")}
-          onContextMenu={noContext}
-        >
-          ◀
-        </button>
-        <button
-          type="button"
-          className={btn}
-          style={btnStyle}
-          aria-label="Kanan"
-          onPointerDown={press("right")}
-          onContextMenu={noContext}
-        >
-          ▶
-        </button>
+        <PadButton control="left" label="◀" ariaLabel="Kiri" />
+        <PadButton control="right" label="▶" ariaLabel="Kanan" />
       </div>
       <div className="pointer-events-auto flex gap-3">
-        <button
-          type="button"
-          className={btn}
-          style={btnStyle}
-          aria-label="Turun / masuk pipa / buka foto"
-          onPointerDown={press("down")}
-          onContextMenu={noContext}
-        >
-          ▼
-        </button>
-        <button
-          type="button"
-          className={btn}
-          style={btnStyle}
-          aria-label="Lompat"
-          onPointerDown={press("jump")}
-          onContextMenu={noContext}
-        >
-          ▲
-        </button>
+        <PadButton
+          control="down"
+          label="▼"
+          ariaLabel="Turun / masuk pipa / buka foto"
+        />
+        <PadButton control="jump" label="▲" ariaLabel="Lompat" />
       </div>
     </div>
   );
