@@ -60,21 +60,29 @@ export const pipes: { x: number; card: CardData }[] = [
     card: {
       id: "proj-1",
       type: "project",
-      title: "Proyek Satu",
-      subtitle: "Studi kasus",
-      body: "Deskripsi singkat proyek di sini.\n\nPeran: …\nTeknologi: …\nHasil: …",
-      tags: ["Next.js", "UI/UX"],
+      title: "J.A.R.V.I.S",
+      subtitle: "AI Assistant",
+      body: "Asisten virtual yang bisa bantu buat nugas, nyari informasi, sampai ngobrol santai.\n\nTeknologi:",
+      tags: ["Next.js", "Python", "Gemini API", "Supabase", "Replicate", "Electron"],
+
+      images: [
+        "/projects/jarvis-1.png",
+      ],
     },
   },
   {
     x: 27,
     card: {
-      id: "proj-2",
+      id: "porto3d",
       type: "project",
-      title: "Proyek Dua",
-      subtitle: "Studi kasus",
-      body: "Deskripsi singkat proyek di sini.\n\nPeran: …\nTeknologi: …\nHasil: …",
-      tags: ["R3F", "WebGL"],
+      title: "Porto 3D",
+      subtitle: "Personal Portfolio",
+      body: "Portofolio pribadi dengan animasi 3D yang interaktif.\n\nTeknologi:",
+      tags: ["R3F", "WebGL", "Next.js", "Tailwind CSS", "Three.js", "Rapier", "Framer Motion"],
+
+      images: [
+        "/projects/porto3d.png",
+      ],
     },
   },
   {
@@ -82,10 +90,14 @@ export const pipes: { x: number; card: CardData }[] = [
     card: {
       id: "proj-3",
       type: "project",
-      title: "Proyek Tiga",
-      subtitle: "Studi kasus",
-      body: "Deskripsi singkat proyek di sini.\n\nPeran: …\nTeknologi: …\nHasil: …",
-      tags: ["Dashboard", "Data Viz"],
+      title: "Keywae",
+      subtitle: "Marketplace Application",
+      body: "Platform marketplace yang memiliki fitur jual beli barang, lelang, hingga booking kendaraan untuk berpergian.\n\nPeran: Frontend Developer & UI Designer \nTeknologi:",
+      tags: ["Laravel", "PostgreSQL", "JQuery", "Bootstrap"],
+      images: [
+        "/projects/keywae-1.jpeg",
+        "/projects/keywae-2.jpeg"
+      ]
     },
   },
   {
@@ -93,10 +105,13 @@ export const pipes: { x: number; card: CardData }[] = [
     card: {
       id: "proj-4",
       type: "project",
-      title: "Proyek Empat",
-      subtitle: "Studi kasus",
-      body: "Deskripsi singkat proyek di sini.\n\nPeran: …\nTeknologi: …\nHasil: …",
-      tags: ["Dashboard", "Data Viz"],
+      title: "Game Tic Tac Toe",
+      subtitle: "AI Game",
+      body: "Game tic tac toe dengan AI yang bisa bermain dengan manusia.\n\nTeknologi:",
+      tags: ["HTML", "CSS", "Javascript"],
+      images: [
+        "/projects/game-1.png",
+      ]
     },
   }
 ];
